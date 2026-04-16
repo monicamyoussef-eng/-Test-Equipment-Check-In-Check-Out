@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>🔧 Test Equipment Check-In / Check-Out</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --blue:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;
+      --dark:#1a1a2e;--gray:#6b7280;--light:#f0f2f5;--white:#fff;
+      --radius:12px;--shadow:0 2px 16px rgba(0,0,0,.09);
+    }
+    body{font-family:Arial,sans-serif;background:var(--light);color:#111827;min-height:100vh;font-size:16px}
+
+    /* PASSWORD SCREEN */
+    #pw-screen{position:fixed;inset:0;background:var(--dark);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;gap:1.2rem;padding:1.5rem}
+    #pw-screen .logo{font-size:3.5rem}
+    #pw-screen h1{color:#fff;font-size:1.5rem;text-align:center}
+    #pw-screen p{color:#94a3b8;font-size:.9rem;text-align:center}
+    .pw-card{background:#fff;border-radius:20px;padding:2rem 2.5rem;display:flex;flex-direction:column;gap:1rem;width:100%;max-width:380px;align-items:center}
+    .pw-card input{border:1.5px solid #d1d5db;border-radius:9px;padding:.8rem 1rem;font-size:1rem;width:100%;text-align:center;letter-spacing:.15em}
+    .pw-card input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+    #pw-error{color:var(--red);font-size:.85rem;font-weight:700;display:none}
+    #pw-screen.hidden{display:none}
+
+    /* LOAD SCREEN */
+    #load-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:1.5rem;gap:1.2rem;text-align:center}
+    #load-screen .logo{font-size:4rem}
+    #load-screen h1{font-size:1.8rem;color:var(--dark)}
+    #load-screen p{color:#555;max-width:460px;line-height:1.6;font-size:.95rem}
+    .load-card{background:var(--white);border-radius:20px;padding:2rem 2.5rem;box-shadow:0 4px 28px rgba(0,0,0,.12);display:flex;flex-direction:column;align-items:center;gap:1.1rem;width:100%;max-width:420px}
+    #load-error{color:var(--red);font-size:.88rem;display:none;margin-top:.3rem;text-align:center}
+    .mode-note{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.7rem 1rem;font-size:.82rem;color:#166534;text-align:left;width:100%}
+    .mode-note-dl{background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:.7rem 1rem;font-size:.82rem;color:#92400e;text-align:left;width:100%;display:none}
+
+    /* BUTTONS */
+    .btn{border:none;border-radius:10px;font-weight:700;cursor:pointer;transition:background .18s,transform .1s;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;font-family:Arial,sans-serif}
+    .btn:active{transform:scale(.97)}
+    .btn-primary{background:var(--blue);color:#fff;padding:.85rem 1.8rem;font-size:1rem}
+    .btn-primary:hover{background:#1d4ed8}
+    .btn-success{background:var(--green);color:#fff;padding:.85rem 1.8rem;font-size:1rem;width:100%}
+    .btn-success:hover{background:#15803d}
+    .btn-secondary{background:#e5e7eb;color:#374151;padding:.55rem 1.1rem;font-size:.88rem}
+    .btn-secondary:hover{background:#d1d5db}
+    .btn-danger{background:var(--red);color:#fff;padding:.5rem 1rem;font-size:.85rem;border-radius:8px}
+    .btn-danger:hover{background:#b91c1c}
+    .btn-edit{background:var(--amber);color:#fff;padding:.5rem 1rem;font-size:.85rem;border-radius:8px}
+    .btn-edit:hover{background:#b45309}
+    .btn-sm{padding:.45rem .9rem;font-size:.82rem;border-radius:8px}
+
+    /* APP SHELL */
+    #app{display:none;flex-direction:column;min-height:100vh}
+
+    /* Header */
+    header{background:var(--dark);color:#fff;padding:.9rem 1.4rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.8rem;position:sticky;top:0;z-index:200;box-shadow:0 2px 14px rgba(0,0,0,.25)}
+    .hd-left{display:flex;align-items:center;gap:.8rem;min-width:0}
+    .hd-left h1{font-size:1.05rem;font-weight:700;white-space:nowrap}
+    .file-pill{background:rgba(255,255,255,.12);border-radius:20px;padding:.25rem .8rem;font-size:.74rem;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+    .hd-right{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+    .stat{background:rgba(255,255,255,.11);border-radius:20px;padding:.28rem .8rem;font-size:.78rem;display:flex;align-items:center;gap:.3rem}
+    .stat strong{font-weight:800}
+    .mode-pill{border-radius:20px;padding:.28rem .85rem;font-size:.75rem;font-weight:700}
+    .mode-direct{background:#dcfce7;color:#166534}
+    .mode-download{background:#fef9c3;color:#92400e}
+
+    /* Tabs */
+    nav.tabs{background:var(--white);border-bottom:2px solid #e5e7eb;padding:0 1.2rem;display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    nav.tabs::-webkit-scrollbar{display:none}
+    .tab-btn{background:none;border:none;border-bottom:3px solid transparent;padding:.85rem 1.2rem;font-size:.93rem;font-weight:700;color:var(--gray);cursor:pointer;white-space:nowrap;margin-bottom:-2px;transition:color .18s,border-color .18s;font-family:Arial,sans-serif}
+    .tab-btn:hover{color:var(--blue)}
+    .tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+    .tab-badge{background:var(--blue);color:#fff;border-radius:20px;padding:.05rem .45rem;font-size:.72rem;margin-left:.35rem}
+
+    /* Content */
+    .content{padding:1.2rem;max-width:900px;margin:0 auto;width:100%;flex:1}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+
+    /* Cards */
+    .card{background:var(--white);border-radius:var(--radius);padding:1.4rem;box-shadow:var(--shadow)}
+
+    /* Form */
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+    @media(max-width:560px){.form-grid{grid-template-columns:1fr}}
+    .fg{display:flex;flex-direction:column;gap:.3rem}
+    .fg.full{grid-column:1/-1}
+    label{font-size:.84rem;font-weight:700;color:#374151}
+    .req{color:var(--red);margin-left:2px}
+    input,select,textarea{border:1.5px solid #d1d5db;border-radius:9px;padding:.7rem .9rem;font-size:.95rem;font-family:Arial,sans-serif;width:100%;background:#fff;color:#111827;transition:border-color .18s,box-shadow .18s}
+    input,textarea{-webkit-appearance:none;appearance:none}
+    select{cursor:pointer}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+    textarea{resize:vertical;min-height:68px}
+
+    /* Barcode input wrapper */
+    .barcode-wrap{position:relative;display:flex;align-items:center;gap:.5rem}
+    .barcode-wrap input{flex:1}
+    .scan-btn{background:var(--blue);color:#fff;border:none;border-radius:9px;padding:.7rem .95rem;font-size:1.25rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .18s}
+    .scan-btn:hover{background:#1d4ed8}
+    .scan-btn:active{transform:scale(.95)}
+
+    /* Transaction toggle */
+    .txn-toggle{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+    .txn-opt{padding:.75rem;border-radius:10px;border:2.5px solid #d1d5db;background:#f9fafb;font-size:.92rem;font-weight:700;cursor:pointer;text-align:center;transition:all .18s;user-select:none}
+    .txn-opt.checkin.on{border-color:var(--green);background:#dcfce7;color:#166534}
+    .txn-opt.checkout.on{border-color:var(--red);background:#fee2e2;color:#991b1b}
+
+    /* Edit banner */
+    .edit-banner{background:#fef9c3;border:1.5px solid #fbbf24;border-radius:9px;padding:.7rem 1rem;font-size:.86rem;color:#92400e;font-weight:700;display:none;align-items:center;gap:.7rem;margin-bottom:1rem;flex-wrap:wrap}
+
+    /* Recent entries */
+    #recent-list{display:flex;flex-direction:column;gap:.6rem;margin-top:1rem}
+    .recent-item{background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:.7rem 1rem;font-size:.86rem;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+    .recent-item.out{background:#fff1f2;border-color:#fecdd3}
+    .recent-time{color:var(--gray);font-size:.76rem;margin-left:auto}
+
+    /* Save bar */
+    .save-bar{background:var(--white);border-top:1.5px solid #e5e7eb;padding:.85rem 1.4rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:sticky;bottom:0;z-index:100}
+    .save-status{display:flex;align-items:center;gap:.5rem;font-size:.84rem;font-weight:700;color:var(--gray)}
+    #save-icon{font-size:1rem}
+
+    /* Log table */
+    .log-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.7rem}
+    .search-wrap{position:relative;flex:1;min-width:180px;max-width:320px}
+    .search-wrap input{padding-left:2.2rem}
+    .search-icon{position:absolute;left:.7rem;top:50%;transform:translateY(-50%);color:#9ca3af;pointer-events:none}
+    .table-wrap{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto;-webkit-overflow-scrolling:touch}
+    table{width:100%;border-collapse:collapse;font-size:.86rem}
+    thead th{background:var(--dark);color:#fff;padding:.7rem .9rem;text-align:left;font-weight:700;white-space:nowrap}
+    thead th:first-child{border-radius:var(--radius) 0 0 0}
+    thead th:last-child{border-radius:0 var(--radius) 0 0}
+    tbody tr{border-bottom:1px solid #f3f4f6;transition:background .12s}
+    tbody tr:hover{background:#f8fafc}
+    tbody tr:last-child{border-bottom:none}
+    td{padding:.65rem .9rem;vertical-align:middle;white-space:nowrap}
+    .badge{display:inline-block;border-radius:20px;padding:.18rem .65rem;font-size:.77rem;font-weight:800}
+    .badge-in{background:#dcfce7;color:#166534}
+    .badge-out{background:#fee2e2;color:#991b1b}
+    .empty{text-align:center;padding:2.5rem;color:#9ca3af}
+    .empty .ei{font-size:2rem;margin-bottom:.4rem}
+    .rn{color:#9ca3af;font-size:.78rem}
+
+    /* ── SCANNER MODAL ── */
+    .scanner-overlay{
+      display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
+      z-index:9000;flex-direction:column;align-items:center;justify-content:center;
+      padding:1.2rem;gap:1rem;
+    }
+    .scanner-overlay.open{display:flex}
+    .scanner-box{
+      background:#000;border-radius:16px;overflow:hidden;
+      width:100%;max-width:440px;position:relative;
+    }
+    #scanner-viewport{width:100%}
+    /* Aiming frame overlay */
+    .scanner-frame{
+      position:absolute;inset:0;pointer-events:none;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .scanner-frame::before{
+      content:'';display:block;
+      width:72%;height:38%;
+      border:3px solid #2563eb;border-radius:8px;
+      box-shadow:0 0 0 9999px rgba(0,0,0,.42);
+    }
+    .scan-line{
+      position:absolute;width:72%;height:3px;
+      background:linear-gradient(90deg,transparent,#38bdf8,transparent);
+      animation:scanline 1.6s ease-in-out infinite;border-radius:2px;
+    }
+    @keyframes scanline{0%{top:31%}100%{top:69%}}
+    .scanner-label{
+      color:#fff;font-weight:700;font-size:1.05rem;text-align:center;
+      padding:.45rem 1.2rem;background:rgba(0,0,0,.55);border-radius:20px;
+    }
+    .scanner-hint{
+      color:#cbd5e1;font-size:.83rem;text-align:center;max-width:300px;line-height:1.55;
+    }
+    .scanner-close{
+      background:#fff;color:#111827;border:none;border-radius:10px;
+      padding:.8rem 2.2rem;font-size:1rem;font-weight:700;cursor:pointer;
+    }
+    .scanner-close:active{transform:scale(.97)}
+
+    /* Toast */
+    .toast{position:fixed;bottom:5rem;left:50%;transform:translateX(-50%) translateY(30px);background:var(--dark);color:#fff;border-radius:12px;padding:.8rem 1.6rem;font-weight:700;box-shadow:0 4px 20px rgba(0,0,0,.22);opacity:0;transition:all .3s ease;z-index:9999;font-size:.93rem;white-space:nowrap;pointer-events:none}
+    .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  </style>
+</head>
+<body>
+
+<!-- PASSWORD SCREEN -->
+<div id="pw-screen">
+  <div class="logo">🔧</div>
+  <h1>Test Equipment Manager</h1>
+  <p>Enter your password to continue</p>
+  <div class="pw-card">
+    <input type="password" id="pw-input" placeholder="Password" autocomplete="current-password"/>
+    <div id="pw-error">⚠️ Incorrect password. Try again.</div>
+    <button class="btn btn-primary" id="pw-btn" style="width:100%;padding:.85rem">🔓 Unlock</button>
+  </div>
+</div>
+
+<!-- LOAD SCREEN -->
+<div id="load-screen">
+  <div class="logo">🔧</div>
+  <h1>Test Equipment Manager</h1>
+  <p>Load your <strong>Test Equipment Tracker</strong> Excel file to start logging Check-In / Check-Out entries.</p>
+  <div class="load-card">
+    <div style="font-size:2.2rem">📂</div>
+    <div class="mode-note" id="note-autosave">
+      ⚡ <strong>Auto-save available</strong> — entries will be saved directly back to your Excel file automatically.
+    </div>
+    <div class="mode-note-dl" id="note-download">
+      📥 <strong>Download mode</strong> — your browser doesn't support direct file write. A new file will be downloaded after each save.
+    </div>
+    <p style="color:#374151;font-size:.9rem">Select your <code>.xlsx</code> or <code>.xlsm</code> file to begin.</p>
+    <button class="btn btn-primary" id="open-btn" style="width:100%">📂 Open Excel File</button>
+    <input type="file" id="file-input" accept=".xlsx,.xlsm" style="display:none"/>
+    <p id="load-error"></p>
+    <p style="font-size:.73rem;color:#9ca3af">Your file is processed locally — nothing is uploaded to the internet.</p>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <header>
+    <div class="hd-left">
+      <span style="font-size:1.5rem">🔧</span>
+      <h1>Test Equipment Check-In / Check-Out</h1>
+      <span class="file-pill" id="file-badge">—</span>
+    </div>
+    <div class="hd-right">
+      <div class="stat">📋 Total: <strong id="s-total">0</strong></div>
+      <div class="stat">✅ In: <strong id="s-in">0</strong></div>
+      <div class="stat">🔄 Out: <strong id="s-out">0</strong></div>
+      <span class="mode-pill" id="mode-pill"></span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="add">➕ Add Entry</button>
+    <button class="tab-btn" data-tab="log">📋 Scan Log <span class="tab-badge" id="log-badge">0</span></button>
+  </nav>
+
+  <div class="content">
+
+    <!-- ADD / EDIT TAB -->
+    <div id="tab-add" class="tab-panel active">
+      <div class="card">
+        <div class="edit-banner" id="edit-banner">
+          ✏️ Editing row <span id="edit-row-num"></span>
+          <button class="btn btn-secondary btn-sm" id="cancel-edit-btn">✕ Cancel</button>
+        </div>
+        <h2 id="form-title" style="font-size:1.05rem;margin-bottom:1.2rem;color:#111827">➕ New Entry</h2>
+
+        <form id="entry-form" autocomplete="off" novalidate>
+          <div class="fg full" style="margin-bottom:1rem">
+            <label>Transaction Type <span class="req">*</span></label>
+            <div class="txn-toggle">
+              <div class="txn-opt checkin on" id="txn-in" onclick="setTxn('Check-In')">✅ Check-In</div>
+              <div class="txn-opt checkout" id="txn-out" onclick="setTxn('Check-Out')">🔄 Check-Out</div>
+            </div>
+            <input type="hidden" id="f-txn" value="Check-In"/>
+          </div>
+
+          <div class="form-grid">
+            <!-- BARCODE with camera scan button -->
+            <div class="fg">
+              <label for="f-barcode">Barcode <span class="req">*</span></label>
+              <div class="barcode-wrap">
+                <input type="text" id="f-barcode" placeholder="Tap 📷 to scan or type" autocomplete="off" inputmode="text"/>
+                <button type="button" class="scan-btn" id="scan-btn" title="Scan barcode">📷</button>
+              </div>
+            </div>
+            <div class="fg">
+              <label for="f-project">Project <span class="req">*</span></label>
+              <select id="f-project">
+                <option value="">— Select Project —</option>
+                <option>JFK T1</option>
+                <option>JFK T4</option>
+                <option>JFK T6</option>
+                <option>JFK GCT</option>
+                <option>DYER RAMP</option>
+                <option>EWR</option>
+                <option>ESA</option>
+                <option>343 MADISON</option>
+                <option>IN OFFICE TESTING</option>
+                <option>OUT FOR CAL</option>
+                <option>SITE SURVEY</option>
+                <option>LGA</option>
+                <option>DELTA</option>
+                <option>MOYNIHAN</option>
+                <option>PENN STATION</option>
+                <option>HUDSON YARDS</option>
+              </select>
+            </div>
+            <div class="fg">
+              <label for="f-person">Person <span class="req">*</span></label>
+              <select id="f-person">
+                <option value="">— Select Person —</option>
+                <option>AA</option><option>AP</option><option>DP</option><option>AR</option>
+                <option>KR</option><option>KM</option><option>DC</option><option>DT</option>
+                <option>MS</option><option>MY</option><option>JM</option><option>ALAN</option>
+                <option>SA</option><option>IA</option><option>MJ</option><option>JK</option>
+                <option>MK</option><option>BZ</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="form-error" style="color:var(--red);font-size:.85rem;font-weight:700;margin-top:.8rem;display:none"></div>
+          <button type="submit" class="btn btn-success" id="submit-btn" style="margin-top:1.1rem">✅ Add Entry</button>
+        </form>
+
+        <div id="recent-section" style="display:none;margin-top:1.4rem">
+          <div style="font-size:.84rem;font-weight:700;color:var(--gray);margin-bottom:.5rem">RECENTLY ADDED</div>
+          <div id="recent-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCAN LOG TAB -->
+    <div id="tab-log" class="tab-panel">
+      <div class="log-toolbar">
+        <h2 style="font-size:1.05rem">📋 Scan Log</h2>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-q" placeholder="Search…" oninput="renderLog()"/>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Barcode</th>
+              <th>Type</th>
+              <th>Project</th>
+              <th>Person</th>
+              <th>Date / Time</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+
+  <div class="save-bar">
+    <div class="save-status">
+      <span id="save-icon">💾</span>
+      <span id="save-text">Ready</span>
+    </div>
+    <button class="btn btn-secondary" id="manual-save-btn">💾 Save Now</button>
+  </div>
+</div>
+
+<!-- ── BARCODE SCANNER MODAL ── -->
+<div class="scanner-overlay" id="scanner-overlay">
+  <div class="scanner-label">📷 Point camera at barcode</div>
+  <div class="scanner-box">
+    <div id="scanner-viewport"></div>
+    <div class="scanner-frame">
+      <div class="scan-line"></div>
+    </div>
+  </div>
+  <div class="scanner-hint">Hold steady — barcode will be detected automatically</div>
+  <button class="scanner-close" id="scanner-close-btn">✕ Cancel</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── PASSWORD GATE ──
+(function() {
+  var PASS = 'cellgain2026';
+  var unlocked = sessionStorage.getItem('te_unlocked') === '1';
+  if (unlocked) {
+    document.getElementById('pw-screen').classList.add('hidden');
+  }
+  function tryUnlock() {
+    var val = document.getElementById('pw-input').value;
+    if (val === PASS) {
+      sessionStorage.setItem('te_unlocked', '1');
+      document.getElementById('pw-screen').classList.add('hidden');
+    } else {
+      document.getElementById('pw-error').style.display = 'block';
+      document.getElementById('pw-input').value = '';
+      document.getElementById('pw-input').focus();
+    }
+  }
+  document.getElementById('pw-btn').addEventListener('click', tryUnlock);
+  document.getElementById('pw-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') tryUnlock();
+  });
+})();
+
+// ── STATE ──
+var wb            = null;
+var fileHandle    = null;
+var fileName      = '';
+var autoSave      = false;
+var scanRows      = [];
+var txn           = 'Check-In';
+var editIdx       = -1;
+var recentEntries = [];
+var saveTimer     = null;
+var html5QrCode   = null;
+
+var TITLE_ROW  = ['🔧  TEST EQUIPMENT SCAN LOG',null,null,null,null,null];
+var HEADER_ROW = ['#','Barcode','Transaction','Project','Person','Date / Time'];
+
+// ── BROWSER SUPPORT ──
+if (!window.showOpenFilePicker) {
+  document.getElementById('note-autosave').style.display = 'none';
+  document.getElementById('note-download').style.display = 'block';
+}
+
+// ── OPEN BUTTON ──
+document.getElementById('open-btn').addEventListener('click', function() {
+  if (window.showOpenFilePicker) {
+    window.showOpenFilePicker({
+      types: [{
+        description: 'Excel Files',
+        accept: {
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+          'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm']
+        }
+      }],
+      multiple: false
+    }).then(function(handles) {
+      var handle = handles[0];
+      fileHandle = handle;
+      var permPromise;
+      try { permPromise = handle.requestPermission({ mode: 'readwrite' }); }
+      catch(e) { permPromise = Promise.resolve('granted'); }
+      return permPromise.then(function(perm) {
+        autoSave = (perm === 'granted');
+        if (!autoSave) fileHandle = null;
+        return handle.getFile();
+      });
+    }).then(function(file) {
+      fileName = file.name;
+      return file.arrayBuffer();
+    }).then(function(buf) {
+      loadFromBuffer(buf);
+      if (!autoSave) showToast('⚠️ Network file — using download mode instead');
+    }).catch(function(err) {
+      if (err.name === 'AbortError') return;
+      fileHandle = null; autoSave = false;
+      document.getElementById('file-input').click();
+    });
+  } else {
+    document.getElementById('file-input').click();
+  }
+});
+
+document.getElementById('file-input').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  fileHandle = null; autoSave = false; fileName = file.name;
+  var reader = new FileReader();
+  reader.onload = function(ev) { loadFromBuffer(ev.target.result); };
+  reader.onerror = function() { showLoadErr('Error reading file. Please try again.'); };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+});
+
+// ── LOAD WORKBOOK ──
+function loadFromBuffer(buf) {
+  try {
+    wb = XLSX.read(new Uint8Array(buf), {type:'array', cellDates:true});
+    parseAll();
+    document.getElementById('load-screen').style.display = 'none';
+    var app = document.getElementById('app');
+    app.style.display = 'flex'; app.style.flexDirection = 'column';
+    document.getElementById('file-badge').textContent = fileName;
+    var pill = document.getElementById('mode-pill');
+    if (autoSave) {
+      pill.textContent = '⚡ Auto-save ON'; pill.className = 'mode-pill mode-direct';
+      setSaveStatus('ready-auto');
+    } else {
+      pill.textContent = '📥 Download mode'; pill.className = 'mode-pill mode-download';
+      setSaveStatus('ready-dl');
+      showToast('📥 Download mode: file will download when you save');
+    }
+  } catch(err) { showLoadErr('Could not read file: ' + err.message); }
+}
+
+function showLoadErr(m) {
+  var el = document.getElementById('load-error');
+  el.textContent = m; el.style.display = 'block';
+}
+
+// ── PARSE WORKBOOK ──
+function parseAll() {
+  if (wb.SheetNames.indexOf('Scan Log') >= 0) {
+    var raw = XLSX.utils.sheet_to_json(wb.Sheets['Scan Log'], {header:1, defval:'', raw:false});
+    scanRows = raw.slice(2).filter(function(r){ return r.some(function(c){ return c !== ''; }); });
+  }
+  renderLog(); updateStats();
+}
+
+// ── TABS ──
+document.querySelectorAll('.tab-btn').forEach(function(btn) {
+  btn.addEventListener('click', function(){ switchTab(btn.getAttribute('data-tab')); });
+});
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelector('[data-tab="'+name+'"]').classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+// ── TRANSACTION TOGGLE ──
+function setTxn(val) {
+  txn = val; document.getElementById('f-txn').value = val;
+  var inEl = document.getElementById('txn-in'), outEl = document.getElementById('txn-out');
+  if (val === 'Check-In') { inEl.classList.add('on'); outEl.classList.remove('on'); }
+  else                    { outEl.classList.add('on'); inEl.classList.remove('on'); }
+}
+
+// ── BARCODE SCANNER ──
+document.getElementById('scan-btn').addEventListener('click', openScanner);
+document.getElementById('scanner-close-btn').addEventListener('click', closeScanner);
+document.getElementById('scanner-overlay').addEventListener('click', function(e){
+  if (e.target === this) closeScanner();
+});
+
+function openScanner() {
+  document.getElementById('scanner-overlay').classList.add('open');
+  html5QrCode = new Html5Qrcode('scanner-viewport');
+
+  var formatsToSupport = [
+    Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.CODE_93,
+    Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E,
+    Html5QrcodeSupportedFormats.ITF,
+    Html5QrcodeSupportedFormats.CODABAR,
+    Html5QrcodeSupportedFormats.QR_CODE
+  ];
+
+  var config = {
+    fps: 15,
+    qrbox: function(w, h) {
+      var minDim = Math.min(w, h);
+      return { width: Math.round(minDim * 0.72), height: Math.round(minDim * 0.38) };
+    },
+    formatsToSupport: formatsToSupport,
+    aspectRatio: 1.5,
+    showTorchButtonIfSupported: true
+  };
+
+  html5QrCode.start(
+    { facingMode: 'environment' },
+    config,
+    onScanSuccess,
+    null
+  ).catch(function(err) {
+    showToast('⚠️ Camera access denied or unavailable');
+    closeScanner();
+  });
+}
+
+function onScanSuccess(decodedText) {
+  if (navigator.vibrate) navigator.vibrate(80);
+  document.getElementById('f-barcode').value = decodedText;
+  closeScanner();
+  showToast('✅ Scanned: ' + decodedText);
+  setTimeout(function(){ document.getElementById('f-project').focus(); }, 300);
+}
+
+function closeScanner() {
+  document.getElementById('scanner-overlay').classList.remove('open');
+  if (html5QrCode) {
+    html5QrCode.stop().catch(function(){}).finally(function(){
+      try { html5QrCode.clear(); } catch(e){}
+      html5QrCode = null;
+    });
+  }
+}
+
+// ── FORM SUBMIT ──
+document.getElementById('entry-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var barcode   = document.getElementById('f-barcode').value.trim();
+  var project   = document.getElementById('f-project').value;
+  var person    = document.getElementById('f-person').value;
+  var errEl     = document.getElementById('form-error');
+
+  var missing = [];
+  if (!barcode) missing.push('Barcode');
+  if (!project) missing.push('Project');
+  if (!person)  missing.push('Person');
+
+  if (missing.length) {
+    errEl.textContent = '⚠️ Please fill in: ' + missing.join(', ');
+    errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+  var dtStr = fmtDt(new Date());
+
+  if (editIdx >= 0) {
+    var r = scanRows[editIdx];
+    r[1]=barcode; r[2]=txn; r[3]=project; r[4]=person;
+    showToast('✅ Entry updated!'); cancelEdit();
+  } else {
+    var newRow = [scanRows.length + 1, barcode, txn, project, person, dtStr];
+    scanRows.push(newRow); addToRecent(newRow); resetForm();
+    showToast(txn === 'Check-In' ? '✅ Checked In!' : '🔄 Checked Out!');
+  }
+  renderLog(); updateStats(); scheduleSave();
+});
+
+function addToRecent(r) {
+  recentEntries.unshift(r);
+  if (recentEntries.length > 5) recentEntries.pop();
+  var sec = document.getElementById('recent-section');
+  var list = document.getElementById('recent-list');
+  sec.style.display = 'block'; list.innerHTML = '';
+  recentEntries.forEach(function(row) {
+    var isIn = row[3] === 'Check-In';
+    var div = document.createElement('div');
+    div.className = 'recent-item' + (isIn ? '' : ' out');
+    div.innerHTML =
+      '<span>'+(isIn?'✅':'🔄')+'</span>'+
+      '<strong>'+esc(row[1])+'</strong>'+
+      '<span class="badge '+(isIn?'badge-in':'badge-out')+'">'+esc(row[2])+'</span>'+
+      '<span>📁 '+esc(row[3])+'</span>'+
+      '<span>👤 '+esc(row[4])+'</span>'+
+      '<span class="recent-time">'+esc(row[5])+'</span>';
+    list.appendChild(div);
+  });
+}
+
+// ── AUTO-SAVE ──
+function scheduleSave() {
+  setSaveStatus('pending'); clearTimeout(saveTimer);
+  saveTimer = setTimeout(doSave, 600);
+}
+
+document.getElementById('manual-save-btn').addEventListener('click', function(){
+  clearTimeout(saveTimer); doSave();
+});
+
+function doSave() {
+  if (!wb) return;
+  buildSheet(); setSaveStatus('saving');
+  var wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  if (autoSave && fileHandle) {
+    var blob = new Blob([wbout], {type:'application/octet-stream'});
+    fileHandle.createWritable().then(function(w){
+      return w.write(blob).then(function(){ return w.close(); });
+    }).then(function(){
+      setSaveStatus('saved'); showToast('💾 Saved!');
+    }).catch(function(){
+      autoSave = false; fileHandle = null;
+      var pill = document.getElementById('mode-pill');
+      pill.textContent = '📥 Download mode'; pill.className = 'mode-pill mode-download';
+      setSaveStatus('ready-dl'); triggerDownload(wbout);
+      showToast('⚠️ Auto-save failed — downloaded instead');
+    });
+  } else {
+    triggerDownload(wbout); setSaveStatus('saved-dl'); showToast('📥 File downloaded!');
+  }
+}
+
+function triggerDownload(wbout) {
+  var blob = new Blob([wbout], {type:'application/octet-stream'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = fileName || 'Test_Equipment_Log.xlsx';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+}
+
+// ── BUILD SHEET ──
+function buildSheet() {
+  var sn = 'Scan Log';
+  if (wb.SheetNames.indexOf(sn) < 0) { wb.SheetNames.push(sn); wb.Sheets[sn] = {}; }
+  var aoa = [TITLE_ROW, HEADER_ROW];
+  scanRows.forEach(function(r){ aoa.push(r); });
+  wb.Sheets[sn] = XLSX.utils.aoa_to_sheet(aoa);
+}
+
+// ── RENDER LOG ──
+function renderLog() {
+  var q = (document.getElementById('search-q').value || '').toLowerCase();
+  var tbody = document.getElementById('log-tbody');
+  document.getElementById('log-badge').textContent = scanRows.length;
+  var rows = q ? scanRows.filter(function(r){ return r.some(function(c){ return String(c).toLowerCase().indexOf(q)>=0; }); }) : scanRows;
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty"><div class="ei">📋</div>No entries yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  rows.slice().reverse().forEach(function(r) {
+    var realIdx = scanRows.indexOf(r);
+    var isIn = r[2] === 'Check-In';
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="rn">'+esc(r[0])+'</td>'+
+      '<td><strong>'+esc(r[1])+'</strong></td>'+
+      '<td><span class="badge '+(isIn?'badge-in':'badge-out')+'">'+esc(r[2])+'</span></td>'+
+      '<td>'+esc(r[3])+'</td>'+
+      '<td>'+esc(r[4])+'</td>'+
+      '<td>'+esc(r[5])+'</td>'+
+      '<td style="display:flex;gap:.4rem">'+
+        '<button class="btn btn-edit btn-sm" onclick="startEdit('+realIdx+')">✏️ Edit</button>'+
+        '<button class="btn btn-danger btn-sm" onclick="deleteRow('+realIdx+')">🗑</button>'+
+      '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+// ── STATS ──
+function updateStats() {
+  document.getElementById('s-total').textContent = scanRows.length;
+  document.getElementById('s-in').textContent  = scanRows.filter(function(r){ return r[2]==='Check-In'; }).length;
+  document.getElementById('s-out').textContent = scanRows.filter(function(r){ return r[2]==='Check-Out'; }).length;
+}
+
+// ── EDIT / DELETE ──
+function startEdit(idx) {
+  editIdx = idx; var r = scanRows[idx];
+  setTxn(r[3] || 'Check-In');
+  document.getElementById('f-barcode').value = r[1] || '';
+  document.getElementById('f-project').value = r[3] || '';
+  document.getElementById('f-person').value  = r[4] || '';
+  document.getElementById('edit-row-num').textContent   = r[0];
+  document.getElementById('edit-banner').style.display  = 'flex';
+  document.getElementById('form-title').textContent     = '✏️ Edit Entry';
+  document.getElementById('submit-btn').textContent     = '💾 Save Changes';
+  switchTab('add'); window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function cancelEdit() {
+  editIdx = -1; resetForm();
+  document.getElementById('edit-banner').style.display = 'none';
+  document.getElementById('form-title').textContent    = '➕ New Entry';
+  document.getElementById('submit-btn').textContent    = '✅ Add Entry';
+}
+
+document.getElementById('cancel-edit-btn').addEventListener('click', cancelEdit);
+
+function deleteRow(idx) {
+  if (!confirm('Delete this entry?')) return;
+  scanRows.splice(idx, 1);
+  scanRows.forEach(function(r, i){ r[0] = i + 1; });
+  renderLog(); updateStats(); scheduleSave(); showToast('🗑 Entry deleted');
+}
+
+function resetForm() {
+  document.getElementById('f-barcode').value = '';
+  document.getElementById('f-project').value = '';
+  document.getElementById('f-person').value  = '';
+  setTxn('Check-In');
+  document.getElementById('form-error').style.display = 'none';
+}
+
+// ── SAVE STATUS ──
+function setSaveStatus(state) {
+  var icon = document.getElementById('save-icon'), text = document.getElementById('save-text');
+  if      (state==='pending')    { icon.textContent='🔄'; text.textContent='Unsaved changes…'; }
+  else if (state==='saving')     { icon.textContent='💾'; text.textContent='Saving…'; }
+  else if (state==='saved')      { icon.textContent='✅'; text.textContent='Saved'; }
+  else if (state==='saved-dl')   { icon.textContent='📥'; text.textContent='Downloaded'; }
+  else if (state==='ready-auto') { icon.textContent='⚡'; text.textContent='Auto-save ready'; }
+  else if (state==='ready-dl')   { icon.textContent='📥'; text.textContent='Download mode'; }
+  else                           { icon.textContent='💾'; text.textContent='Ready'; }
+}
+
+// ── HELPERS ──
+function fmtDt(d) {
+  var p=function(n){return String(n).padStart(2,'0');};
+  var mo=d.getMonth()+1, hr=d.getHours(), ampm=hr>=12?'PM':'AM';
+  hr=hr%12||12;
+  return p(mo)+'/'+p(d.getDate())+'/'+d.getFullYear()+' '+p(hr)+':'+p(d.getMinutes())+' '+ampm;
+}
+
+function esc(s) {
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+var toastTimer;
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2500);
+}
+</script>
+</body>
+</html>
