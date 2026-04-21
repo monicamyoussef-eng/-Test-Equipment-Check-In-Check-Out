@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>🔧 Test Equipment Check-In / Check-Out</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --blue:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;
+      --dark:#1a1a2e;--gray:#6b7280;--light:#f0f2f5;--white:#fff;
+      --radius:12px;--shadow:0 2px 16px rgba(0,0,0,.09);
+    }
+    body{font-family:Arial,sans-serif;background:var(--light);color:#111827;min-height:100vh;font-size:16px}
+
+    /* ── PASSWORD SCREEN ── */
+    #pw-screen{position:fixed;inset:0;background:var(--dark);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;gap:1.2rem;padding:1.5rem}
+    #pw-screen .logo{font-size:3.5rem}
+    #pw-screen h1{color:#fff;font-size:1.5rem;text-align:center}
+    #pw-screen p{color:#94a3b8;font-size:.9rem;text-align:center}
+    .pw-card{background:#fff;border-radius:20px;padding:2rem 2.5rem;display:flex;flex-direction:column;gap:1rem;width:100%;max-width:380px;align-items:center}
+    .pw-card input{border:1.5px solid #d1d5db;border-radius:9px;padding:.8rem 1rem;font-size:1rem;width:100%;text-align:center;letter-spacing:.15em}
+    .pw-card input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+    #pw-error{color:var(--red);font-size:.85rem;font-weight:700;display:none}
+    #pw-screen.hidden{display:none}
+
+    /* ── CONNECT / FILE-SELECT SCREENS ── */
+    .fullscreen-center{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:1.5rem;gap:1.2rem;text-align:center}
+    .fullscreen-center .logo{font-size:4rem}
+    .fullscreen-center h1{font-size:1.8rem;color:var(--dark)}
+    .fullscreen-center p{color:#555;max-width:460px;line-height:1.6;font-size:.95rem}
+    .load-card{background:var(--white);border-radius:20px;padding:2rem 2.5rem;box-shadow:0 4px 28px rgba(0,0,0,.12);display:flex;flex-direction:column;align-items:center;gap:1rem;width:100%;max-width:440px}
+    .connect-error{color:var(--red);font-size:.88rem;display:none;text-align:center;font-weight:700}
+    .connect-info{font-size:.84rem;color:#166534;font-weight:700;display:none}
+
+    /* File select list */
+    #file-select-screen{display:none}
+    .file-select-btn{width:100%;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:.8rem 1rem;cursor:pointer;text-align:left;font-size:.88rem;font-family:Arial,sans-serif;display:flex;flex-direction:column;gap:.2rem;transition:border-color .18s,background .18s}
+    .file-select-btn:hover{border-color:var(--blue);background:#eff6ff}
+    .file-select-btn strong{color:#111827}
+    .file-path{color:#6b7280;font-size:.77rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .file-date{color:#9ca3af;font-size:.74rem}
+    #file-list{display:flex;flex-direction:column;gap:.5rem;width:100%;max-height:340px;overflow-y:auto}
+    .file-card{background:var(--white);border-radius:20px;padding:1.6rem 2rem;box-shadow:0 4px 28px rgba(0,0,0,.1);width:100%;max-width:500px;display:flex;flex-direction:column;gap:1rem}
+
+    /* ── BUTTONS ── */
+    .btn{border:none;border-radius:10px;font-weight:700;cursor:pointer;transition:background .18s,transform .1s;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;font-family:Arial,sans-serif}
+    .btn:active{transform:scale(.97)}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .btn-primary{background:var(--blue);color:#fff;padding:.85rem 1.8rem;font-size:1rem}
+    .btn-primary:hover:not(:disabled){background:#1d4ed8}
+    .btn-ms{background:#0078d4;color:#fff;padding:.85rem 1.8rem;font-size:1rem;width:100%}
+    .btn-ms:hover:not(:disabled){background:#006cbf}
+    .btn-success{background:var(--green);color:#fff;padding:.85rem 1.8rem;font-size:1rem;width:100%}
+    .btn-success:hover{background:#15803d}
+    .btn-secondary{background:#e5e7eb;color:#374151;padding:.55rem 1.1rem;font-size:.88rem}
+    .btn-secondary:hover{background:#d1d5db}
+    .btn-danger{background:var(--red);color:#fff;padding:.5rem 1rem;font-size:.85rem;border-radius:8px}
+    .btn-danger:hover{background:#b91c1c}
+    .btn-edit{background:var(--amber);color:#fff;padding:.5rem 1rem;font-size:.85rem;border-radius:8px}
+    .btn-edit:hover{background:#b45309}
+    .btn-sm{padding:.45rem .9rem;font-size:.82rem;border-radius:8px}
+    .btn-link{background:none;border:none;color:var(--blue);font-size:.82rem;cursor:pointer;font-family:Arial,sans-serif;padding:0;text-decoration:underline}
+
+    /* ── APP SHELL ── */
+    #app{display:none;flex-direction:column;min-height:100vh}
+
+    /* Header */
+    header{background:var(--dark);color:#fff;padding:.9rem 1.4rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.8rem;position:sticky;top:0;z-index:200;box-shadow:0 2px 14px rgba(0,0,0,.25)}
+    .hd-left{display:flex;align-items:center;gap:.8rem;min-width:0}
+    .hd-left h1{font-size:1.05rem;font-weight:700;white-space:nowrap}
+    .file-pill{background:rgba(255,255,255,.12);border-radius:20px;padding:.25rem .8rem;font-size:.74rem;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+    .hd-right{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+    .stat{background:rgba(255,255,255,.11);border-radius:20px;padding:.28rem .8rem;font-size:.78rem;display:flex;align-items:center;gap:.3rem}
+    .stat strong{font-weight:800}
+    .cloud-pill{background:#dcfce7;color:#166534;border-radius:20px;padding:.28rem .85rem;font-size:.75rem;font-weight:700}
+
+    /* Tabs */
+    nav.tabs{background:var(--white);border-bottom:2px solid #e5e7eb;padding:0 1.2rem;display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    nav.tabs::-webkit-scrollbar{display:none}
+    .tab-btn{background:none;border:none;border-bottom:3px solid transparent;padding:.85rem 1.2rem;font-size:.93rem;font-weight:700;color:var(--gray);cursor:pointer;white-space:nowrap;margin-bottom:-2px;transition:color .18s,border-color .18s;font-family:Arial,sans-serif}
+    .tab-btn:hover{color:var(--blue)}
+    .tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+    .tab-badge{background:var(--blue);color:#fff;border-radius:20px;padding:.05rem .45rem;font-size:.72rem;margin-left:.35rem}
+
+    /* Content */
+    .content{padding:1.2rem;max-width:900px;margin:0 auto;width:100%;flex:1}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+
+    /* Cards */
+    .card{background:var(--white);border-radius:var(--radius);padding:1.4rem;box-shadow:var(--shadow)}
+
+    /* Form */
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+    @media(max-width:560px){.form-grid{grid-template-columns:1fr}}
+    .fg{display:flex;flex-direction:column;gap:.3rem}
+    .fg.full{grid-column:1/-1}
+    label{font-size:.84rem;font-weight:700;color:#374151}
+    .req{color:var(--red);margin-left:2px}
+    input,select,textarea{border:1.5px solid #d1d5db;border-radius:9px;padding:.7rem .9rem;font-size:.95rem;font-family:Arial,sans-serif;width:100%;background:#fff;color:#111827;transition:border-color .18s,box-shadow .18s}
+    input,textarea{-webkit-appearance:none;appearance:none}
+    select{cursor:pointer}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+    textarea{resize:vertical;min-height:68px}
+
+    /* Barcode input */
+    .barcode-wrap{position:relative;display:flex;align-items:center;gap:.5rem}
+    .barcode-wrap input{flex:1}
+    .scan-btn{background:var(--blue);color:#fff;border:none;border-radius:9px;padding:.7rem .95rem;font-size:1.25rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .18s}
+    .scan-btn:hover{background:#1d4ed8}
+    .scan-btn:active{transform:scale(.95)}
+
+    /* Transaction toggle */
+    .txn-toggle{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+    .txn-opt{padding:.75rem;border-radius:10px;border:2.5px solid #d1d5db;background:#f9fafb;font-size:.92rem;font-weight:700;cursor:pointer;text-align:center;transition:all .18s;user-select:none}
+    .txn-opt.checkin.on{border-color:var(--green);background:#dcfce7;color:#166534}
+    .txn-opt.checkout.on{border-color:var(--red);background:#fee2e2;color:#991b1b}
+
+    /* Edit banner */
+    .edit-banner{background:#fef9c3;border:1.5px solid #fbbf24;border-radius:9px;padding:.7rem 1rem;font-size:.86rem;color:#92400e;font-weight:700;display:none;align-items:center;gap:.7rem;margin-bottom:1rem;flex-wrap:wrap}
+
+    /* Recent entries */
+    #recent-list{display:flex;flex-direction:column;gap:.6rem;margin-top:1rem}
+    .recent-item{background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:.7rem 1rem;font-size:.86rem;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+    .recent-item.out{background:#fff1f2;border-color:#fecdd3}
+    .recent-time{color:var(--gray);font-size:.76rem;margin-left:auto}
+
+    /* Save bar */
+    .save-bar{background:var(--white);border-top:1.5px solid #e5e7eb;padding:.85rem 1.4rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:sticky;bottom:0;z-index:100}
+    .save-status{display:flex;align-items:center;gap:.5rem;font-size:.84rem;font-weight:700;color:var(--gray)}
+    #save-icon{font-size:1rem}
+
+    /* Log table */
+    .log-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.7rem}
+    .search-wrap{position:relative;flex:1;min-width:180px;max-width:320px}
+    .search-wrap input{padding-left:2.2rem}
+    .search-icon{position:absolute;left:.7rem;top:50%;transform:translateY(-50%);color:#9ca3af;pointer-events:none}
+    .table-wrap{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto;-webkit-overflow-scrolling:touch}
+    table{width:100%;border-collapse:collapse;font-size:.86rem}
+    thead th{background:var(--dark);color:#fff;padding:.7rem .9rem;text-align:left;font-weight:700;white-space:nowrap}
+    thead th:first-child{border-radius:var(--radius) 0 0 0}
+    thead th:last-child{border-radius:0 var(--radius) 0 0}
+    tbody tr{border-bottom:1px solid #f3f4f6;transition:background .12s}
+    tbody tr:hover{background:#f8fafc}
+    tbody tr:last-child{border-bottom:none}
+    td{padding:.65rem .9rem;vertical-align:middle;white-space:nowrap}
+    .badge{display:inline-block;border-radius:20px;padding:.18rem .65rem;font-size:.77rem;font-weight:800}
+    .badge-in{background:#dcfce7;color:#166534}
+    .badge-out{background:#fee2e2;color:#991b1b}
+    .empty{text-align:center;padding:2.5rem;color:#9ca3af}
+    .empty .ei{font-size:2rem;margin-bottom:.4rem}
+    .rn{color:#9ca3af;font-size:.78rem}
+
+    /* ── SCANNER MODAL ── */
+    .scanner-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9000;flex-direction:column;align-items:center;justify-content:center;padding:1.2rem;gap:1rem}
+    .scanner-overlay.open{display:flex}
+    .scanner-box{background:#000;border-radius:16px;overflow:hidden;width:100%;max-width:440px;position:relative}
+    #scanner-viewport{width:100%}
+    .scanner-frame{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
+    .scanner-frame::before{content:'';display:block;width:72%;height:38%;border:3px solid #2563eb;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.42)}
+    .scan-line{position:absolute;width:72%;height:3px;background:linear-gradient(90deg,transparent,#38bdf8,transparent);animation:scanline 1.6s ease-in-out infinite;border-radius:2px}
+    @keyframes scanline{0%{top:31%}100%{top:69%}}
+    .scanner-label{color:#fff;font-weight:700;font-size:1.05rem;text-align:center;padding:.45rem 1.2rem;background:rgba(0,0,0,.55);border-radius:20px}
+    .scanner-hint{color:#cbd5e1;font-size:.83rem;text-align:center;max-width:300px;line-height:1.55}
+    .scanner-close{background:#fff;color:#111827;border:none;border-radius:10px;padding:.8rem 2.2rem;font-size:1rem;font-weight:700;cursor:pointer}
+    .scanner-close:active{transform:scale(.97)}
+
+    /* Toast */
+    .toast{position:fixed;bottom:5rem;left:50%;transform:translateX(-50%) translateY(30px);background:var(--dark);color:#fff;border-radius:12px;padding:.8rem 1.6rem;font-weight:700;box-shadow:0 4px 20px rgba(0,0,0,.22);opacity:0;transition:all .3s ease;z-index:9999;font-size:.93rem;white-space:nowrap;pointer-events:none}
+    .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+    /* Spinner */
+    .spinner{width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+
+<!-- PASSWORD SCREEN -->
+<div id="pw-screen">
+  <div class="logo">🔧</div>
+  <h1>Test Equipment Manager</h1>
+  <p>Enter your password to continue</p>
+  <div class="pw-card">
+    <input type="password" id="pw-input" placeholder="Password" autocomplete="current-password"/>
+    <div id="pw-error">⚠️ Incorrect password. Try again.</div>
+    <button class="btn btn-primary" id="pw-btn" style="width:100%;padding:.85rem">🔓 Unlock</button>
+  </div>
+</div>
+
+<!-- CONNECT SCREEN -->
+<div id="connect-screen" class="fullscreen-center" style="display:none">
+  <div class="logo">🔧</div>
+  <h1>Test Equipment Manager</h1>
+  <p>Sign in with your Microsoft account to sync with your OneDrive Excel file.</p>
+  <div class="load-card">
+    <div id="connect-user-info" class="connect-info" style="display:none"></div>
+    <div id="connect-loading" style="display:none;align-items:center;gap:.8rem;width:100%">
+      <div class="spinner"></div>
+      <span id="connect-loading-text" style="font-size:.9rem;color:#374151;font-weight:700">Loading…</span>
+    </div>
+    <button class="btn btn-ms" id="signin-btn">
+      <svg width="18" height="18" viewBox="0 0 21 21" style="margin-right:.3rem"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+      Sign in with Microsoft
+    </button>
+    <div id="connect-file-row" style="display:none;width:100%;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+      <span id="connect-file-name" style="font-size:.85rem;font-weight:700;color:#374151"></span>
+      <button class="btn-link" id="change-file-btn">Change file</button>
+    </div>
+    <button class="btn btn-secondary" id="signout-btn" style="display:none;font-size:.82rem">Sign Out</button>
+    <p id="connect-error" class="connect-error"></p>
+    <p style="font-size:.73rem;color:#9ca3af">Your data stays in your own OneDrive — nothing is shared externally.</p>
+  </div>
+</div>
+
+<!-- FILE SELECT SCREEN -->
+<div id="file-select-screen" class="fullscreen-center" style="display:none">
+  <div class="logo">📊</div>
+  <h1>Select Excel File</h1>
+  <p>Choose your Test Equipment Tracker Excel file from OneDrive.</p>
+  <div class="file-card">
+    <div id="file-list"><p style="color:#6b7280;font-size:.9rem">🔍 Searching OneDrive…</p></div>
+    <div>
+      <label style="font-size:.84rem;font-weight:700;color:#374151;display:block;margin-bottom:.4rem">Search by file name:</label>
+      <div style="display:flex;gap:.5rem">
+        <input type="text" id="file-search-q" placeholder="e.g. Test_Equipment" style="flex:1"/>
+        <button class="btn btn-primary btn-sm" id="file-search-btn">🔍</button>
+      </div>
+      <div id="file-search-results" style="margin-top:.6rem"></div>
+    </div>
+    <button class="btn btn-secondary btn-sm" id="back-to-connect-btn">← Back</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <header>
+    <div class="hd-left">
+      <span style="font-size:1.5rem">🔧</span>
+      <h1>Test Equipment Check-In / Check-Out</h1>
+      <span class="file-pill" id="file-badge">—</span>
+    </div>
+    <div class="hd-right">
+      <div class="stat">📋 Total: <strong id="s-total">0</strong></div>
+      <div class="stat">✅ In: <strong id="s-in">0</strong></div>
+      <div class="stat">🔄 Out: <strong id="s-out">0</strong></div>
+      <span class="cloud-pill">☁️ OneDrive</span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="add">➕ Add Entry</button>
+    <button class="tab-btn" data-tab="log">📋 Scan Log <span class="tab-badge" id="log-badge">0</span></button>
+  </nav>
+
+  <div class="content">
+    <!-- ADD / EDIT TAB -->
+    <div id="tab-add" class="tab-panel active">
+      <div class="card">
+        <div class="edit-banner" id="edit-banner">
+          ✏️ Editing row <span id="edit-row-num"></span>
+          <button class="btn btn-secondary btn-sm" id="cancel-edit-btn">✕ Cancel</button>
+        </div>
+        <h2 id="form-title" style="font-size:1.05rem;margin-bottom:1.2rem;color:#111827">➕ New Entry</h2>
+        <form id="entry-form" autocomplete="off" novalidate>
+          <div class="fg full" style="margin-bottom:1rem">
+            <label>Transaction Type <span class="req">*</span></label>
+            <div class="txn-toggle">
+              <div class="txn-opt checkin on" id="txn-in" onclick="setTxn('Check-In')">✅ Check-In</div>
+              <div class="txn-opt checkout" id="txn-out" onclick="setTxn('Check-Out')">🔄 Check-Out</div>
+            </div>
+            <input type="hidden" id="f-txn" value="Check-In"/>
+          </div>
+          <div class="form-grid">
+            <div class="fg">
+              <label for="f-barcode">Barcode <span class="req">*</span></label>
+              <div class="barcode-wrap">
+                <input type="text" id="f-barcode" placeholder="Tap 📷 to scan or type" autocomplete="off" inputmode="text"/>
+                <button type="button" class="scan-btn" id="scan-btn" title="Scan barcode">📷</button>
+              </div>
+            </div>
+            <div class="fg">
+              <label for="f-project">Project <span class="req">*</span></label>
+              <select id="f-project">
+                <option value="">— Select Project —</option>
+                <option>JFK T1</option><option>JFK T4</option><option>JFK T6</option>
+                <option>JFK GCT</option><option>DYER RAMP</option><option>EWR</option>
+                <option>ESA</option><option>343 MADISON</option><option>IN OFFICE TESTING</option>
+                <option>OUT FOR CAL</option><option>SITE SURVEY</option><option>LGA</option>
+                <option>DELTA</option><option>MOYNIHAN</option><option>PENN STATION</option>
+                <option>HUDSON YARDS</option>
+              </select>
+            </div>
+            <div class="fg">
+              <label for="f-person">Person <span class="req">*</span></label>
+              <select id="f-person">
+                <option value="">— Select Person —</option>
+                <option>AA</option><option>AP</option><option>DP</option><option>AR</option>
+                <option>KR</option><option>KM</option><option>DC</option><option>DT</option>
+                <option>MS</option><option>MY</option><option>JM</option><option>ALAN</option>
+                <option>SA</option><option>IA</option><option>MJ</option><option>JK</option>
+                <option>MK</option><option>BZ</option>
+              </select>
+            </div>
+          </div>
+          <div id="form-error" style="color:var(--red);font-size:.85rem;font-weight:700;margin-top:.8rem;display:none"></div>
+          <button type="submit" class="btn btn-success" id="submit-btn" style="margin-top:1.1rem">✅ Add Entry</button>
+        </form>
+        <div id="recent-section" style="display:none;margin-top:1.4rem">
+          <div style="font-size:.84rem;font-weight:700;color:var(--gray);margin-bottom:.5rem">RECENTLY ADDED</div>
+          <div id="recent-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCAN LOG TAB -->
+    <div id="tab-log" class="tab-panel">
+      <div class="log-toolbar">
+        <h2 style="font-size:1.05rem">📋 Scan Log</h2>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-q" placeholder="Search…" oninput="renderLog()"/>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Barcode</th><th>Type</th><th>Project</th><th>Person</th><th>Date / Time</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="log-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="save-bar">
+    <div class="save-status">
+      <span id="save-icon">☁️</span>
+      <span id="save-text">Ready</span>
+    </div>
+    <button class="btn btn-secondary" id="manual-save-btn">💾 Save to OneDrive</button>
+  </div>
+</div>
+
+<!-- SCANNER MODAL -->
+<div class="scanner-overlay" id="scanner-overlay">
+  <div class="scanner-label">📷 Point camera at barcode</div>
+  <div class="scanner-box">
+    <div id="scanner-viewport"></div>
+    <div class="scanner-frame"><div class="scan-line"></div></div>
+  </div>
+  <div class="scanner-hint">Hold steady — barcode will be detected automatically</div>
+  <button class="scanner-close" id="scanner-close-btn">✕ Cancel</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIGURATION ──
+var CLIENT_ID = '541cabaa-5c18-4dc8-a1b4-46fe7ba11bb2';
+var GRAPH_SCOPES = ['Files.ReadWrite', 'User.Read'];
+
+// ── PASSWORD ──
+(function() {
+  var PASS = 'cellgain2026';
+  if (sessionStorage.getItem('te_unlocked') === '1') {
+    document.getElementById('pw-screen').classList.add('hidden');
+    startApp(); return;
+  }
+  function tryUnlock() {
+    if (document.getElementById('pw-input').value === PASS) {
+      sessionStorage.setItem('te_unlocked', '1');
+      document.getElementById('pw-screen').classList.add('hidden');
+      startApp();
+    } else {
+      document.getElementById('pw-error').style.display = 'block';
+      document.getElementById('pw-input').value = '';
+      document.getElementById('pw-input').focus();
+    }
+  }
+  document.getElementById('pw-btn').addEventListener('click', tryUnlock);
+  document.getElementById('pw-input').addEventListener('keydown', function(e){ if(e.key==='Enter') tryUnlock(); });
+})();
+
+// ── STATE ──
+var msalInstance = null;
+var currentAccount = null;
+var driveFileId = localStorage.getItem('te_file_id') || null;
+var driveFileName = localStorage.getItem('te_file_name') || '';
+var wb = null;
+var fileName = '';
+var scanRows = [];
+var txn = 'Check-In';
+var editIdx = -1;
+var recentEntries = [];
+var saveTimer = null;
+var html5QrCode = null;
+var TITLE_ROW  = ['🔧  TEST EQUIPMENT SCAN LOG',null,null,null,null,null];
+var HEADER_ROW = ['#','Barcode','Transaction','Project','Person','Date / Time'];
+
+// ── STARTUP ──
+function startApp() {
+  var redirectUri = window.location.href.split(/[?#]/)[0];
+  var msalConfig = {
+    auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/common', redirectUri: redirectUri },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+  };
+  msalInstance = new msal.PublicClientApplication(msalConfig);
+  msalInstance.initialize().then(function() {
+    return msalInstance.handleRedirectPromise();
+  }).then(function(response) {
+    if (response) currentAccount = response.account;
+    else { var a = msalInstance.getAllAccounts(); if (a.length>0) currentAccount = a[0]; }
+    showScreen('connect');
+    if (currentAccount) {
+      showUserSignedIn();
+      if (driveFileId) loadFileFromOneDrive();
+      else { showScreen('file-select'); loadFileList(); }
+    }
+  }).catch(function(err) { showScreen('connect'); showConnectError('Init error: '+err.message); });
+}
+
+// ── SCREENS ──
+function showScreen(name) {
+  document.getElementById('connect-screen').style.display    = name==='connect'     ? 'flex' : 'none';
+  document.getElementById('file-select-screen').style.display= name==='file-select' ? 'flex' : 'none';
+  var a = document.getElementById('app');
+  if (name==='app'){ a.style.display='flex'; a.style.flexDirection='column'; } else { a.style.display='none'; }
+}
+
+function showUserSignedIn() {
+  var name = currentAccount.name || currentAccount.username || 'User';
+  var el = document.getElementById('connect-user-info');
+  el.textContent = '✅ Signed in as '+name; el.style.display = 'block';
+  document.getElementById('signin-btn').style.display = 'none';
+  document.getElementById('signout-btn').style.display = '';
+  if (driveFileName) {
+    document.getElementById('connect-file-name').textContent = '📄 '+driveFileName;
+    document.getElementById('connect-file-row').style.display = 'flex';
+  }
+}
+
+function setConnectLoading(text) {
+  var el = document.getElementById('connect-loading');
+  document.getElementById('connect-loading-text').textContent = text||'Loading…';
+  el.style.display = text ? 'flex' : 'none';
+}
+
+function showConnectError(msg) {
+  var el = document.getElementById('connect-error');
+  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
+  setConnectLoading(null);
+}
+
+// ── CONNECT BUTTONS ──
+document.getElementById('signin-btn').addEventListener('click', function() {
+  if (!msalInstance) return;
+  document.getElementById('connect-error').style.display = 'none';
+  this.disabled = true; this.textContent = '⏳ Signing in…';
+  msalInstance.loginPopup({ scopes: GRAPH_SCOPES }).then(function(r) {
+    currentAccount = r.account; showUserSignedIn();
+    if (driveFileId) loadFileFromOneDrive();
+    else { showScreen('file-select'); loadFileList(); }
+  }).catch(function(err) {
+    var b = document.getElementById('signin-btn'); b.disabled = false;
+    b.innerHTML = '<svg width="18" height="18" viewBox="0 0 21 21" style="margin-right:.3rem"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>Sign in with Microsoft';
+    if (err.errorCode !== 'user_cancelled') showConnectError('Sign-in failed: '+err.message);
+  });
+});
+
+document.getElementById('signout-btn').addEventListener('click', function() {
+  if (!msalInstance||!currentAccount) return;
+  msalInstance.logoutPopup({ account: currentAccount }).then(function() {
+    currentAccount=null; localStorage.removeItem('te_file_id'); localStorage.removeItem('te_file_name');
+    driveFileId=null; driveFileName=''; location.reload();
+  });
+});
+
+document.getElementById('change-file-btn').addEventListener('click', function() {
+  localStorage.removeItem('te_file_id'); localStorage.removeItem('te_file_name');
+  driveFileId=null; driveFileName=''; showScreen('file-select'); loadFileList();
+});
+
+document.getElementById('back-to-connect-btn').addEventListener('click', function() { showScreen('connect'); });
+
+// ── GRAPH API ──
+var GRAPH = 'https://graph.microsoft.com/v1.0';
+
+function getToken() {
+  if (!currentAccount) return Promise.reject(new Error('Not signed in'));
+  return msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: currentAccount })
+    .then(function(r){ return r.accessToken; })
+    .catch(function(){
+      return msalInstance.acquireTokenPopup({ scopes: GRAPH_SCOPES })
+        .then(function(r){ currentAccount=r.account; return r.accessToken; });
+    });
+}
+
+function graphBlob(path) {
+  return getToken().then(function(t) {
+    return fetch(GRAPH+path, { headers:{ Authorization:'Bearer '+t } });
+  }).then(function(r){ if(!r.ok) throw new Error('Graph '+r.status); return r.arrayBuffer(); });
+}
+
+function graphJSON(path) {
+  return getToken().then(function(t) {
+    return fetch(GRAPH+path, { headers:{ Authorization:'Bearer '+t } });
+  }).then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error('Graph '+r.status+': '+t); }); return r.json(); });
+}
+
+function graphPut(path, data) {
+  return getToken().then(function(t) {
+    return fetch(GRAPH+path, { method:'PUT', headers:{ Authorization:'Bearer '+t, 'Content-Type':'application/octet-stream' }, body:data });
+  }).then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error('Upload '+r.status+': '+t.substring(0,200)); }); return r.json(); });
+}
+
+function searchOneDrive(q) {
+  return graphJSON("/me/drive/search(q='"+encodeURIComponent(q)+"')?$select=id,name,parentReference,lastModifiedDateTime")
+    .then(function(d){ return (d.value||[]).filter(function(f){ return f.name&&(f.name.toLowerCase().endsWith('.xlsx')||f.name.toLowerCase().endsWith('.xlsm')); }); });
+}
+
+// ── FILE SELECT ──
+function loadFileList() {
+  var listEl = document.getElementById('file-list');
+  listEl.innerHTML = '<p style="color:#6b7280;font-size:.88rem">🔍 Searching OneDrive for Excel files…</p>';
+  searchOneDrive('Test_Equipment').then(function(files) {
+    if (!files.length) return searchOneDrive('.xlsx');
+    return files;
+  }).then(function(files) {
+    listEl.innerHTML = '';
+    if (!files.length) {
+      listEl.innerHTML = '<p style="color:#dc2626;font-size:.85rem">No Excel files found. Make sure your file is synced to OneDrive.</p>';
+      return;
+    }
+    var lbl = document.createElement('p');
+    lbl.style.cssText='font-size:.82rem;color:#6b7280;margin-bottom:.4rem';
+    lbl.textContent='Select your Test Equipment Excel file:';
+    listEl.appendChild(lbl);
+    files.forEach(function(f) {
+      var btn = document.createElement('button');
+      btn.className='file-select-btn';
+      var path=(f.parentReference&&f.parentReference.path||'').replace('/drive/root:','')||'/';
+      var date=f.lastModifiedDateTime?new Date(f.lastModifiedDateTime).toLocaleDateString():'';
+      btn.innerHTML='📊 <strong>'+esc(f.name)+'</strong><span class="file-path">'+esc(path)+'</span><span class="file-date">Modified: '+date+'</span>';
+      btn.addEventListener('click', function(){ selectFile(f); });
+      listEl.appendChild(btn);
+    });
+  }).catch(function(err) {
+    listEl.innerHTML='<p style="color:#dc2626;font-size:.85rem">Error: '+esc(err.message)+'</p><button class="btn btn-secondary btn-sm" onclick="loadFileList()" style="margin-top:.5rem">🔄 Retry</button>';
+  });
+}
+
+document.getElementById('file-search-btn').addEventListener('click', function() {
+  var q=document.getElementById('file-search-q').value.trim(); if(!q) return;
+  var r=document.getElementById('file-search-results'); r.innerHTML='<p style="color:#6b7280;font-size:.83rem">Searching…</p>';
+  searchOneDrive(q).then(function(files) {
+    r.innerHTML='';
+    if(!files.length){ r.innerHTML='<p style="color:#6b7280;font-size:.83rem">No files found for "'+esc(q)+'"</p>'; return; }
+    files.forEach(function(f){
+      var btn=document.createElement('button'); btn.className='file-select-btn';
+      btn.innerHTML='📊 <strong>'+esc(f.name)+'</strong>';
+      btn.addEventListener('click',function(){ selectFile(f); }); r.appendChild(btn);
+    });
+  }).catch(function(err){ r.innerHTML='<p style="color:#dc2626;font-size:.83rem">Error: '+esc(err.message)+'</p>'; });
+});
+
+document.getElementById('file-search-q').addEventListener('keydown',function(e){ if(e.key==='Enter') document.getElementById('file-search-btn').click(); });
+
+function selectFile(f) {
+  driveFileId=f.id; driveFileName=f.name;
+  localStorage.setItem('te_file_id',f.id); localStorage.setItem('te_file_name',f.name);
+  showScreen('connect'); loadFileFromOneDrive();
+}
+
+// ── LOAD FROM ONEDRIVE ──
+function loadFileFromOneDrive() {
+  showScreen('connect'); showUserSignedIn();
+  setConnectLoading('⏳ Loading '+(driveFileName||'file')+' from OneDrive…');
+  showConnectError('');
+  graphBlob('/me/drive/items/'+driveFileId+'/content').then(function(buf) {
+    fileName=driveFileName; loadFromBuffer(buf); setConnectLoading(null);
+  }).catch(function(err) {
+    setConnectLoading(null);
+    if(err.message.indexOf('404')>=0||err.message.toLowerCase().indexOf('itemnotfound')>=0) {
+      localStorage.removeItem('te_file_id'); localStorage.removeItem('te_file_name');
+      driveFileId=null; driveFileName='';
+      document.getElementById('connect-file-row').style.display='none';
+      showConnectError('File not found. Please select it again.');
+      setTimeout(function(){ showScreen('file-select'); loadFileList(); }, 2000);
+    } else { showConnectError('Error loading file: '+err.message); }
+  });
+}
+
+function loadFromBuffer(buf) {
+  try {
+    wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+    parseAll(); showScreen('app');
+    document.getElementById('file-badge').textContent=fileName;
+    setSaveStatus('ready');
+  } catch(err){ showConnectError('Could not read Excel file: '+err.message); }
+}
+
+function parseAll() {
+  if(wb.SheetNames.indexOf('Scan Log')>=0) {
+    var raw=XLSX.utils.sheet_to_json(wb.Sheets['Scan Log'],{header:1,defval:'',raw:false});
+    scanRows=raw.slice(2).filter(function(r){ return r.some(function(c){ return c!==''; }); });
+  } else { scanRows=[]; }
+  renderLog(); updateStats();
+}
+
+// ── TABS ──
+document.querySelectorAll('.tab-btn').forEach(function(btn) {
+  btn.addEventListener('click',function(){ switchTab(btn.getAttribute('data-tab')); });
+});
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelector('[data-tab="'+name+'"]').classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+// ── TRANSACTION TOGGLE ──
+function setTxn(val) {
+  txn=val; document.getElementById('f-txn').value=val;
+  var i=document.getElementById('txn-in'),o=document.getElementById('txn-out');
+  if(val==='Check-In'){i.classList.add('on');o.classList.remove('on');}
+  else{o.classList.add('on');i.classList.remove('on');}
+}
+
+// ── SCANNER ──
+document.getElementById('scan-btn').addEventListener('click',openScanner);
+document.getElementById('scanner-close-btn').addEventListener('click',closeScanner);
+document.getElementById('scanner-overlay').addEventListener('click',function(e){ if(e.target===this) closeScanner(); });
+
+function openScanner() {
+  document.getElementById('scanner-overlay').classList.add('open');
+  html5QrCode=new Html5Qrcode('scanner-viewport');
+  var formats=[Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.CODE_93,Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.ITF,
+    Html5QrcodeSupportedFormats.CODABAR,Html5QrcodeSupportedFormats.QR_CODE];
+  html5QrCode.start({facingMode:'environment'},
+    {fps:15,qrbox:function(w,h){var m=Math.min(w,h);return{width:Math.round(m*.72),height:Math.round(m*.38)};},
+     formatsToSupport:formats,aspectRatio:1.5,showTorchButtonIfSupported:true},
+    function(text){ if(navigator.vibrate) navigator.vibrate(80); document.getElementById('f-barcode').value=text; closeScanner(); showToast('✅ Scanned: '+text); setTimeout(function(){ document.getElementById('f-project').focus(); },300); },
+    null
+  ).catch(function(){ showToast('⚠️ Camera access denied'); closeScanner(); });
+}
+
+function closeScanner() {
+  document.getElementById('scanner-overlay').classList.remove('open');
+  if(html5QrCode){ html5QrCode.stop().catch(function(){}).finally(function(){ try{html5QrCode.clear();}catch(e){} html5QrCode=null; }); }
+}
+
+// ── FORM SUBMIT ──
+document.getElementById('entry-form').addEventListener('submit',function(e) {
+  e.preventDefault();
+  var barcode=document.getElementById('f-barcode').value.trim();
+  var project=document.getElementById('f-project').value;
+  var person=document.getElementById('f-person').value;
+  var errEl=document.getElementById('form-error');
+  var missing=[];
+  if(!barcode) missing.push('Barcode');
+  if(!project) missing.push('Project');
+  if(!person)  missing.push('Person');
+  if(missing.length){ errEl.textContent='⚠️ Please fill in: '+missing.join(', '); errEl.style.display='block'; return; }
+  errEl.style.display='none';
+  if(editIdx>=0) {
+    var r=scanRows[editIdx]; r[1]=barcode; r[2]=txn; r[3]=project; r[4]=person;
+    showToast('✅ Entry updated!'); cancelEdit();
+  } else {
+    var newRow=[scanRows.length+1,barcode,txn,project,person,fmtDt(new Date())];
+    scanRows.push(newRow); addToRecent(newRow); resetForm();
+    showToast(txn==='Check-In'?'✅ Checked In!':'🔄 Checked Out!');
+  }
+  renderLog(); updateStats(); scheduleSave();
+});
+
+function addToRecent(r) {
+  recentEntries.unshift(r); if(recentEntries.length>5) recentEntries.pop();
+  var sec=document.getElementById('recent-section'),list=document.getElementById('recent-list');
+  sec.style.display='block'; list.innerHTML='';
+  recentEntries.forEach(function(row){
+    var isIn=row[2]==='Check-In';
+    var div=document.createElement('div');
+    div.className='recent-item'+(isIn?'':' out');
+    div.innerHTML='<span>'+(isIn?'✅':'🔄')+'</span><strong>'+esc(row[1])+'</strong>'+
+      '<span class="badge '+(isIn?'badge-in':'badge-out')+'">'+esc(row[2])+'</span>'+
+      '<span>📁 '+esc(row[3])+'</span><span>👤 '+esc(row[4])+'</span>'+
+      '<span class="recent-time">'+esc(row[5])+'</span>';
+    list.appendChild(div);
+  });
+}
+
+// ── SAVE TO ONEDRIVE ──
+function scheduleSave(){ setSaveStatus('pending'); clearTimeout(saveTimer); saveTimer=setTimeout(doSave,800); }
+
+document.getElementById('manual-save-btn').addEventListener('click',function(){ clearTimeout(saveTimer); doSave(); });
+
+function doSave() {
+  if(!wb||!driveFileId) return;
+  buildSheet(); setSaveStatus('saving');
+  var wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  graphPut('/me/drive/items/'+driveFileId+'/content',new Blob([wbout],{type:'application/octet-stream'}))
+    .then(function(){ setSaveStatus('saved'); showToast('☁️ Saved to OneDrive!'); })
+    .catch(function(err){ setSaveStatus('error'); showToast('⚠️ Save failed — tap Save Now'); console.error(err); });
+}
+
+function buildSheet() {
+  var sn='Scan Log';
+  if(wb.SheetNames.indexOf(sn)<0){ wb.SheetNames.push(sn); wb.Sheets[sn]={}; }
+  var aoa=[TITLE_ROW,HEADER_ROW]; scanRows.forEach(function(r){ aoa.push(r); });
+  wb.Sheets[sn]=XLSX.utils.aoa_to_sheet(aoa);
+}
+
+// ── RENDER LOG ──
+function renderLog() {
+  var q=(document.getElementById('search-q').value||'').toLowerCase();
+  var tbody=document.getElementById('log-tbody');
+  document.getElementById('log-badge').textContent=scanRows.length;
+  var rows=q?scanRows.filter(function(r){ return r.some(function(c){ return String(c).toLowerCase().indexOf(q)>=0; }); }):scanRows;
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="7" class="empty"><div class="ei">📋</div>No entries yet</td></tr>'; return; }
+  tbody.innerHTML='';
+  rows.slice().reverse().forEach(function(r) {
+    var ri=scanRows.indexOf(r),isIn=r[2]==='Check-In';
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td class="rn">'+esc(r[0])+'</td><td><strong>'+esc(r[1])+'</strong></td>'+
+      '<td><span class="badge '+(isIn?'badge-in':'badge-out')+'">'+esc(r[2])+'</span></td>'+
+      '<td>'+esc(r[3])+'</td><td>'+esc(r[4])+'</td><td>'+esc(r[5])+'</td>'+
+      '<td style="display:flex;gap:.4rem"><button class="btn btn-edit btn-sm" onclick="startEdit('+ri+')">✏️</button>'+
+      '<button class="btn btn-danger btn-sm" onclick="deleteRow('+ri+')">🗑</button></td>';
+    tbody.appendChild(tr);
+  });
+}
+
+// ── STATS ──
+function updateStats() {
+  document.getElementById('s-total').textContent=scanRows.length;
+  document.getElementById('s-in').textContent=scanRows.filter(function(r){ return r[2]==='Check-In'; }).length;
+  document.getElementById('s-out').textContent=scanRows.filter(function(r){ return r[2]==='Check-Out'; }).length;
+}
+
+// ── EDIT / DELETE ──
+function startEdit(idx) {
+  editIdx=idx; var r=scanRows[idx];
+  setTxn(r[2]||'Check-In');
+  document.getElementById('f-barcode').value=r[1]||'';
+  document.getElementById('f-project').value=r[3]||'';
+  document.getElementById('f-person').value=r[4]||'';
+  document.getElementById('edit-row-num').textContent=r[0];
+  document.getElementById('edit-banner').style.display='flex';
+  document.getElementById('form-title').textContent='✏️ Edit Entry';
+  document.getElementById('submit-btn').textContent='💾 Save Changes';
+  switchTab('add'); window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function cancelEdit() {
+  editIdx=-1; resetForm();
+  document.getElementById('edit-banner').style.display='none';
+  document.getElementById('form-title').textContent='➕ New Entry';
+  document.getElementById('submit-btn').textContent='✅ Add Entry';
+}
+
+document.getElementById('cancel-edit-btn').addEventListener('click',cancelEdit);
+
+function deleteRow(idx) {
+  if(!confirm('Delete this entry?')) return;
+  scanRows.splice(idx,1); scanRows.forEach(function(r,i){ r[0]=i+1; });
+  renderLog(); updateStats(); scheduleSave(); showToast('🗑 Entry deleted');
+}
+
+function resetForm() {
+  document.getElementById('f-barcode').value='';
+  document.getElementById('f-project').value='';
+  document.getElementById('f-person').value='';
+  setTxn('Check-In');
+  document.getElementById('form-error').style.display='none';
+}
+
+// ── SAVE STATUS ──
+function setSaveStatus(state) {
+  var icon=document.getElementById('save-icon'),text=document.getElementById('save-text');
+  if(state==='pending'){icon.textContent='🔄';text.textContent='Unsaved changes…';}
+  else if(state==='saving'){icon.textContent='⏳';text.textContent='Saving to OneDrive…';}
+  else if(state==='saved'){icon.textContent='✅';text.textContent='Saved to OneDrive';}
+  else if(state==='error'){icon.textContent='⚠️';text.textContent='Save failed — retry?';}
+  else{icon.textContent='☁️';text.textContent='OneDrive ready';}
+}
+
+// ── HELPERS ──
+function fmtDt(d) {
+  var p=function(n){ return String(n).padStart(2,'0'); };
+  var mo=d.getMonth()+1,hr=d.getHours(),ampm=hr>=12?'PM':'AM';
+  hr=hr%12||12;
+  return p(mo)+'/'+p(d.getDate())+'/'+d.getFullYear()+' '+p(hr)+':'+p(d.getMinutes())+' '+ampm;
+}
+
+function esc(s) {
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+var toastTimer;
+function showToast(msg) {
+  var t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ t.classList.remove('show'); },2600);
+}
+</script>
+</body>
+</html>
