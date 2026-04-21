@@ -409,19 +409,27 @@ function startApp() {
     auth: { clientId: CLIENT_ID, authority: 'https://login.microsoftonline.com/common', redirectUri: redirectUri },
     cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
   };
-  msalInstance = new msal.PublicClientApplication(msalConfig);
-  msalInstance.initialize().then(function() {
-    return msalInstance.handleRedirectPromise();
-  }).then(function(response) {
-    if (response) currentAccount = response.account;
-    else { var a = msalInstance.getAllAccounts(); if (a.length>0) currentAccount = a[0]; }
-    showScreen('connect');
-    if (currentAccount) {
-      showUserSignedIn();
-      if (driveFileId) loadFileFromOneDrive();
-      else { showScreen('file-select'); loadFileList(); }
-    }
-  }).catch(function(err) { showScreen('connect'); showConnectError('Init error: '+err.message); });
+  try { msalInstance = new msal.PublicClientApplication(msalConfig); }
+  catch(e) { showScreen('connect'); showConnectError('Failed to load sign-in library: '+e.message); return; }
+
+  var afterInit = function() {
+    msalInstance.handleRedirectPromise().then(function(response) {
+      if (response) currentAccount = response.account;
+      else { var a = msalInstance.getAllAccounts(); if (a.length>0) currentAccount = a[0]; }
+      showScreen('connect');
+      if (currentAccount) {
+        showUserSignedIn();
+        if (driveFileId) loadFileFromOneDrive();
+        else { showScreen('file-select'); loadFileList(); }
+      }
+    }).catch(function(err) { showScreen('connect'); showConnectError('Init error: '+err.message); });
+  };
+
+  if (typeof msalInstance.initialize === 'function') {
+    msalInstance.initialize().then(afterInit).catch(function(err) { showScreen('connect'); showConnectError('Init error: '+err.message); });
+  } else {
+    afterInit();
+  }
 }
 
 // ── SCREENS ──
